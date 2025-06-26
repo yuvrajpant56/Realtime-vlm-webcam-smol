@@ -25,14 +25,14 @@ This repository is a simple demo that uses a local **LLaMA.cpp** server with the
    cmake --build . --config Release
 Run the model server locally:
 
-bash
-Copy
-Edit
+```bash
 ./bin/llama-server \
   -hf ggml-org/SmolVLM2-256M-Video-Instruct-GGUF \
   --no-mmproj-offload \
   -c 512 \
   --host 127.0.0.1 --port 8080
+```
+
 💡 This starts a local server with the SmolVLM2 256M model and enables webcam vision mode.
 
 Open index.html in your browser.
