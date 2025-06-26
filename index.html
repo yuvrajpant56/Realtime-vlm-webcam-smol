@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmolVLM Real-Time Camera Demo</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: linear-gradient(to right, #d7e1ec, #f5f7fa);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      color: #1f2937;
+    }
+
+    h1 {
+      background: rgba(255, 255, 255, 0.6);
+      padding: 1rem 2rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      backdrop-filter: blur(8px);
+      font-size: 1.8rem;
+    }
+
+    #videoFeed {
+      width: 480px;
+      height: 360px;
+      border-radius: 4px;
+      border: 2px solid #fff;
+      background-color: #000;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .glass-container {
+      width: 90%;
+      max-width: 600px;
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    label {
+      font-weight: 600;
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 10px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(4px);
+      box-shadow: inset 0 0 0 1px #d1d5db;
+    }
+
+    textarea {
+      resize: none;
+      height: 60px;
+    }
+
+    button {
+      padding: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      background: #ef4444;
+      color: #fff;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(239, 68, 68, 0.4);
+      transition: background 0.2s ease, transform 0.1s ease;
+    }
+
+    button:hover {
+      background: #dc2626;
+      transform: translateY(-2px);
+    }
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>SmolVLM Real-Time Camera Demo</h1>
+
+  <video id="videoFeed" autoplay playsinline muted></video>
+  <canvas id="canvas" class="hidden"></canvas>
+
+  <div class="glass-container">
+    <div>
+      <label for="baseURL">Base API:</label>
+      <input id="baseURL" value="http://localhost:8080" />
+    </div>
+    <div>
+      <label for="instructionText">Instruction:</label>
+      <textarea id="instructionText">What do you see? Please provide one concise sentence.</textarea>
+    </div>
+    <div>
+      <label for="responseText">Response:</label>
+      <textarea id="responseText" readonly placeholder="Server response will appear here..."></textarea>
+    </div>
+    <div>
+      <label for="intervalSelect">Interval between 2 requests:</label>
+      <select id="intervalSelect">
+        <option value="100">100ms</option>
+        <option value="250">250ms</option>
+        <option value="500" selected>500ms</option>
+        <option value="1000">1s</option>
+        <option value="2000">2s</option>
+      </select>
+    </div>
+    <button id="startButton">Start</button>
+  </div>
+
+  <script>
+    const video = document.getElementById('videoFeed');
+    const canvas = document.getElementById('canvas');
+    const baseURL = document.getElementById('baseURL');
+    const instructionText = document.getElementById('instructionText');
+    const responseText = document.getElementById('responseText');
+    const intervalSelect = document.getElementById('intervalSelect');
+    const startButton = document.getElementById('startButton');
+
+    let stream;
+    let intervalId;
+    let isProcessing = false;
+
+    async function initCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+      } catch (err) {
+        alert("Error accessing camera: " + err.message);
+      }
+    }
+
+    function captureImage() {
+            if (!stream || !video.videoWidth) {
+                console.warn("Video stream not ready for capture.");
+                return null;
+            }
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            return canvas.toDataURL('image/jpeg', 0.8); // Use JPEG for smaller size, 0.8 quality
+        }
+
+    async function sendRequest() {
+      const imageBase64 = captureImage();
+      const instruction = instructionText.value;
+      const response = await fetch(`${baseURL.value}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          max_tokens: 50,
+          temperature: 0.3,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: instruction },
+              { type: 'image_url', image_url: { url: imageBase64 } }
+            ]
+          }]
+        })
+      });
+
+      const json = await response.json();
+      responseText.value = json.choices?.[0]?.message?.content || "No response";
+    }
+
+    function startProcessing() {
+      isProcessing = true;
+      startButton.textContent = "Stop";
+      const intervalMs = parseInt(intervalSelect.value);
+      sendRequest();
+      intervalId = setInterval(sendRequest, intervalMs);
+    }
+
+    function stopProcessing() {
+      isProcessing = false;
+      clearInterval(intervalId);
+      startButton.textContent = "Start";
+    }
+
+    startButton.addEventListener('click', () => {
+      if (isProcessing) stopProcessing();
+      else startProcessing();
+    });
+
+    window.addEventListener('DOMContentLoaded', initCamera);
+  </script>
+</body>
+</html>
